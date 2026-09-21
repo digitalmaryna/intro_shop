@@ -578,6 +578,15 @@
   // URL in place — it's already pointed at your live Zap.
   var ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/28829976/4dgv1xi/';
 
+  // Your Apps Script deployment's /exec URL. When this exact Index.html
+  // is served BY Apps Script (script.google.com), google.script.run is
+  // used automatically and this URL is ignored. When this same file is
+  // hosted elsewhere as a static page (e.g. GitHub Pages), there's no
+  // google.script.run, so the page calls this URL directly over HTTP
+  // instead — both copies end up writing to the same Google Sheet.
+  // Update this if you ever redeploy and get a new /exec URL.
+  var APPS_SCRIPT_EXEC_URL = 'https://script.google.com/macros/s/AKfycbzGquYwPL0zPJokEP2pRxL5EEsSdoGTYSty0n1BttPL53YnJ635pkopfRKzuOk3lAim/exec';
+
   // ---- Catalog ----
   // No product photography available yet: each card uses a flat color
   // panel (matching the garment's tone) plus a simple line icon instead
@@ -754,14 +763,35 @@
   function callServer(fnName, payload) {
     return new Promise(function (resolve, reject) {
       if (window.google && google.script && google.script.run) {
+        // Served by Apps Script itself (script.google.com/.../exec).
         google.script.run
           .withSuccessHandler(resolve)
           .withFailureHandler(function (err) { reject(err); })
           [fnName](payload);
+      } else if (APPS_SCRIPT_EXEC_URL) {
+        // Served from elsewhere (e.g. GitHub Pages): google.script.run
+        // doesn't exist here, so call the same Apps Script deployment's
+        // /exec URL over plain HTTP instead. Content-Type is kept as
+        // text/plain (not application/json) so the browser doesn't send
+        // a CORS preflight request first — Apps Script web apps can't
+        // answer those. doPost() in Code.gs still parses the body as JSON.
+        fetch(APPS_SCRIPT_EXEC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: fnName, payload: payload })
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (data) {
+            if (data && data.ok) {
+              resolve(data.result);
+            } else {
+              reject(new Error((data && data.error) || 'Server error'));
+            }
+          })
+          .catch(function (err) { reject(err); });
       } else {
-        // Local preview fallback (google.script.run only exists once this
-        // page is served from Apps Script). Logs the payload instead of
-        // failing, so the page can still be previewed outside Apps Script.
+        // Last-resort local preview fallback: logs the payload instead of
+        // failing, so the page can still be previewed with no backend at all.
         console.warn('[preview mode] google.script.run unavailable. Would call ' + fnName + ' with:', payload);
         setTimeout(function () { resolve({ ok: true, orderId: 'PREVIEW-' + Date.now() }); }, 500);
       }
