@@ -936,6 +936,10 @@
   // Paste your Make.com custom-webhook URL here (Make: Webhooks > Custom webhook > Copy address).
   const WEBHOOK_URL = "https://hook.eu1.make.com/8pnk33fxjn80vd9lnjrit2etyxwsnsmm";
 
+  // n8n webhook: the same order JSON is also sent here (fire-and-forget, so an n8n
+  // problem never blocks the customer's order or the Make webhook).
+  const N8N_WEBHOOK_URL = "https://danit-n8n.duckdns.org/webhook/922c7a4f-cf7a-40b1-97e8-088ab109d9a4";
+
   (function () {
     var form = document.getElementById('orderForm');
     var btn = document.getElementById('submitOrderBtn');
@@ -988,6 +992,19 @@
       });
     }
 
+    function postToN8n(order) {
+      if (!N8N_WEBHOOK_URL) return;
+      fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(order)
+      }).then(function (res) {
+        if (!res.ok) throw new Error('n8n webhook responded with status ' + res.status);
+      }).catch(function (err) {
+        console.error('[n8n] webhook failed (order was still saved):', err);
+      });
+    }
+
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       msg.className = 'form-msg';
@@ -1036,7 +1053,8 @@
         cart = [];
         updateCart();
 
-        // 2) Send the order to Make.
+        // 2) Send the order to n8n (independent) and to Make.
+        postToN8n(order);
         return postToMake(order).then(function () {
           document.getElementById('successMsg').textContent = 'Thank you! A confirmation has been sent to ' + email;
           document.getElementById('successOrderId').textContent = 'Order Reference: ' + order.order_id;
